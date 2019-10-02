@@ -1,77 +1,101 @@
 import random
-Tset = [[],[],[],[]]
-Free = [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]
-keyword = [['w1',['A1','C1','D1','Z1','A2','M1']],['w2',['A1','B1']],['w3',['B1','D1','F1','B3']],['w4',['D1','F1','E1','G1']]]
-keyword2 = {'w1' : {'A1','C1','D1','Z1','A2','M1'}, 'w2':{'A1','B1'},'w3':{'B1','D1','F1','B3'},'w4' : {'D1','F1','E1','G1'}}
-p = 43
-q = 59
-N = 2537
-phi = (p-1) * (q-1)
-e = 13
-d = 937
-pk = (N,e)
-sk = (N,d,p,q)
+from Cryptodome.Cipher import AES
+import hashlib
+from bitstring import BitArray
 
-def RSA_Enc(msg) :
-    #print(msg)
-    M = 0
-    val = []
-    for i in range(len(msg)) :
-        M = ord(msg[i])
-        M = (M**e) % N
-        val.insert(0,M)
+Tset = [[0] * 5 for i in range(128)]
+Free = [[0,1,2,3,4] for i in range(128)]
+
+pad = lambda s : s + (16 - len(s)%16) * chr(16 - len(s) % 16)
+
+class Pair :
+    def __init__(self, label, value) :
+        self.label = label
+        self.value = value
+
+def make_Encryption(key, word) :
+	beforeCipher = word
+	cipher = AES.new(key, AES.MODE_ECB)
+	return cipher.encrypt(beforeCipher)
+
+def make_Decryption(key, afterCipher) :
+	cipher = AES.new(key, AES.MODE_ECB)
+	return cipher.decrypt(afterCipher)
+
+def bToDecimal(b) :
+    val = 0
+    for i in range(len(b)) :
+        if b[6-i] == '1' :
+            val+=2^int(i)
     return val
 
-def RSA_Dec(msg) :
-    #print(msg)
-    string = ''
-    for C in msg :
-        M = (C**d) % N
-        #print('M : ', M)
-        string = chr(M) + string
-    return string
+def XOR(id, K) :
+    val = ''
+    for i in range(129) :
+        if id[i] != K[i] :
+            val += '1'
+        else :
+            val += '0'
+    return val
 
-'''
-def Tset() :
-    for i in keyword :
-        key = RSA_Enc(i[0])
-        for file in i[1] :
-            pair = (key,file)
-            val = random.choice(Free)
-            Free.remove(val)
-            j = val % 4
-            B = val // 4
-            print('B : ',B,'j : ', j,'pair : ',pair)
-            Tset[B].insert(j, pair)
-'''
-def Tset2() :
-    for i in keyword2.keys() :
-        key = RSA_Enc(i)
-        for file in keyword2[i] :
-            pair = (key, file)
-            val = random.choice(Free)
-            Free.remove(val)
-            j = val % 4
-            B = val // 4
-            #print('B : ',B,'j : ', j,'pair : ',pair)
-            Tset[B].insert(j, pair)
-    return Tset
+def return_bLK(Bit) :
+    hash_val = Bit.bin
+    return bToDecimal(hash_val[:7]), hash_val[7:87], hash_val[87:216]
 
-def Tsolv2(Tset) :
-    table = {}
-    for pairs in Tset :
-        for pair in pairs :
-            #key = pair[0]
-            key = RSA_Dec(pair[0])
-            file = pair[1]
-            if str(key) in table :
-                table[str(key)].add(file)
+def TSetSetup(T) :
+    Kt = []
+    for w in T.keys() :
+        stag = make_Encryption('iwanttogetstag00'.encode(),w.encode())
+        for i in range(len(T[w])) :
+            indx = '1'
+            if i == len(T[w])-1 :
+                indx = '0'
+            msg = pad(str(i)).encode()
+            b, L, K = return_bLK(BitArray(hashlib.sha256(make_Encryption(stag,msg)).digest()))
+            j = random.choice(Free[b])
+            Free[b].remove(j)
+            val = indx+list(T[w])[i]
+            pair = Pair(L,XOR(val,K))
+            Tset[b][j] = pair
+    return Tset,'iwanttogetstag00'
+
+def TSetRetrieve(Tset, stag) :
+    table = set()
+    indx = 1
+    now = 0
+    while indx == 1 :
+        msg = pad(str(now)).encode()
+        b, L, K = return_bLK(BitArray(hashlib.sha256(make_Encryption(stag,msg)).digest()))
+        T = Tset[b]
+        for j in range(len(T)) :
+            if T[j]== 0 or T[j].label != L :
+                continue
+            value = XOR(T[j].value, K)
+            if value[0] != '1' :
+                indx = 0
+            table.add(value[1:])
+        now+=1
+    return table
+
+def EDBSetup(origin) :
+    T = {}
+    Ks = 'idencryptionval0'.encode()
+    for i in origin.keys() :
+        key = make_Encryption(Ks,i.encode())
+        for id in origin[i] :
+            file = BitArray(make_Encryption(key,id.encode())).bin
+            if i in T :
+                T[i].add(file)
             else :
-                table[str(key)] = {file}
+                T[i] = {file}
+    Tset, Kt = TSetSetup(T)
+    return Tset, Ks, Kt
 
-    print(table)
-
-print(keyword2)
-T = Tset2()
-print(T)
-Tsolv2(T)
+if __name__ == "__main__" :
+    origin = {'w123456789123456' : {'A123456789123456','C123456789123456','D123456789123456'}, 'w023456789123456':{'A123456789123456','B123456789123456'},'w223456789123456':{'B123456789123456','D123456789123456','F123456789123456'},'w323456789123456' : {'D123456789123456','F123456789123456','E123456789123456','G123456789123456'}}
+    Tset, Ks, Kt = EDBSetup(origin)
+    table = TSetRetrieve(Tset,make_Encryption('iwanttogetstag00'.encode(),'w023456789123456'.encode()))
+    for bi in table :
+        key = make_Encryption(Ks,'w023456789123456'.encode())
+        id = make_Decryption(key,BitArray(bin=bi).bytes)
+        print(id.decode())
