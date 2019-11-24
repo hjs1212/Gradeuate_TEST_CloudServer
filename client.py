@@ -1,10 +1,11 @@
-from socket import *
 import json
 import _pickle
 import random
-from Cryptodome.Cipher import AES
 import hashlib
+import os
+from Cryptodome.Cipher import AES
 from bitstring import BitArray
+from socket import *
 
 HOST = '127.0.0.1'
 PORT = 8080
@@ -24,9 +25,9 @@ class Pair :
         self.value = value
 
 def make_Encryption(key, word) :
-	beforeCipher = word
-	cipher = AES.new(key, AES.MODE_ECB)
-	return cipher.encrypt(beforeCipher)
+    beforeCipher = word
+    cipher = AES.new(key, AES.MODE_ECB)
+    return cipher.encrypt(beforeCipher)
 
 def make_Decryption(key, afterCipher) :
 	cipher = AES.new(key, AES.MODE_ECB)
@@ -56,7 +57,7 @@ def EDBSetup(origin) :
     T = {}
     Ks = 'idencryptionval0'.encode()
     for i in origin.keys() :
-        key = make_Encryption(Ks,i.encode())
+        key = make_Encryption(Ks,('000000'+i).encode())
         for id in origin[i] :
             file = BitArray(make_Encryption(key,id.encode())).bin
             if i in T :
@@ -69,7 +70,8 @@ def EDBSetup(origin) :
 def TSetSetup(T) :
     Kt = []
     for w in T.keys() :
-        stag = make_Encryption('iwanttogetstag00'.encode(),w.encode())
+        print(w)
+        stag = make_Encryption('iwanttogetstag00'.encode(),('000000'+w).encode())
         for i in range(len(T[w])) :
             indx = '1'
             if i == len(T[w])-1 :
@@ -100,9 +102,22 @@ def getMsg(user) :
     msg = _pickle.loads(b"".join(data))
     return msg
 
+def getFile(PATH) :
+    origin = {}
+    for dir in os.listdir(PATH) :
+        file = open(PATH+dir,'r')
+        filename = dir[:-4]
+        keywordlist = file.readline().split(',')
+        for keyword in keywordlist :
+            if keyword in origin :
+                origin[keyword].append(filename)
+            else :
+                origin[keyword] = [filename]
+    return origin
+
 if __name__ == '__main__' :
     print('Start')
-    origin = {'w123456789123456' : {'A123456789123456','C123456789123456','D123456789123456'}, 'w023456789123456':{'A123456789123456','B123456789123456'},'w223456789123456':{'B123456789123456','D123456789123456','F123456789123456'},'w323456789123456' : {'D123456789123456','F123456789123456','E123456789123456','G123456789123456'}}
+    origin = getFile('./send/')
     Tset, Ks, Kt = EDBSetup(origin)
     sendTSetClient.connect(ADDR)
     print(origin)
@@ -112,7 +127,7 @@ if __name__ == '__main__' :
         try :
             sendTset(sendTSetClient, Tset)
             sendTSetClient.close()
-            msg = input("Index Keyword : ").encode()
+            msg = ('000000'+input("Index Keyword : ")).encode()
             encMsg = make_Encryption('iwanttogetstag00'.encode(),msg)
             sendMsgClient.connect(ADDR)
             sendTset(sendMsgClient, encMsg)
